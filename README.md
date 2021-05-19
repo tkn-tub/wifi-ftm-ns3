@@ -1,6 +1,8 @@
 # wifi-ftm-ns3
 Standard compliant implementation of the IEEE 802.11-FTM protocol in ns3.
 
+A more in-depth tutorial of how to use the ns-3 FTM interface is found in the HowTo.pdf document.
+The following description is very general and only explains some basic steps.
 
 How to use:
 This file describes the basic usage of the FTM Model in ns-3.
