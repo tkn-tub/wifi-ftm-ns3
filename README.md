@@ -1,7 +1,9 @@
-# wifi-ftm-ns3
-Standard compliant implementation of the IEEE 802.11-FTM protocol in ns3.
+# FTM-ns3
+The Fine-Time Measurement (FTM) protocol introduced in IEEE 802.11-2016 uses radio frequency based time-of-flight estimation which enables precise indoor ranging and   positioning. We present FTM-ns3, an extension for the widely used ns3 network simulator to support the 802.11 FTM protocol. Using results from experiments with real FTM  hardware we developed error models which allow to analyze the impact of channel bandwidth and multipath channel propagation on the performance of FTM-based ranging or  localization schemes. Our extension is provided to the community as open source under a GPL license.
 
-A more in-depth tutorial of how to use the ns-3 FTM interface is found in the HowTo.pdf document.
+# HowTo
+A detailed tutorial on how to use the FTM-ns3 extension is found in the HowTo.pdf document.
+
 The following description is very general and only explains some basic steps.
 
 How to use:
