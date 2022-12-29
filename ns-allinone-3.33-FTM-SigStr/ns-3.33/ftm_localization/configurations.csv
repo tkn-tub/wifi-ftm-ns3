@@ -1,0 +1,5 @@
+Test name,Propagation Model 1,Propagation Model 2,FTM Error Model, Bandwidth, Multipath Map
+wired,FixedRssLossModel(-40 dBm),none,wired,20 MHz,no
+wireless,FixedRssLossModel(-40 dBm),none,wireless,20 MHz,yes
+sig_str,ThreeLogDistancePropagationLossModel,none,wireless signal strength,20 MHz,yes
+sig_str_fading,ThreeLogDistancePropagationLossModel,NakagamiPropagationLossModel,wireless signal strength,20 MHz,yes
