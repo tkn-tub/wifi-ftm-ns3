@@ -6,3 +6,14 @@ A detailed tutorial on how to use the FTM-ns3 extension can be found [here](./Ho
 
 # How to reference FTM-ns3?
 Please use the following bibtex:
+
+```
+@inproceedings{zubow2022ftm,
+  title={FTM-ns3: WiFi Fine Time Measurements for NS3},
+  author={Zubow, Anatolij and Laskos, Christos and Dressler, Falko},
+  booktitle={2022 17th Wireless On-Demand Network Systems and Services Conference (WONS)},
+  pages={1--7},
+  year={2022},
+  organization={IEEE}
+}
+```
