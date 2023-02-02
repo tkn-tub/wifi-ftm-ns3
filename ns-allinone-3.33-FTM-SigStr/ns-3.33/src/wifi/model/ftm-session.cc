@@ -61,6 +61,7 @@ FtmSession::FtmSession ()
   m_session_active = false;
   m_ftm_error_model = CreateObject<FtmErrorModel> ();
   m_live_rtt_enabled = false;
+  m_timestamp_set_checks = 0;
   CreateDefaultFtmParams ();
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -169,20 +170,32 @@ FtmSession::ProcessFtmResponse (FtmResponseHeader ftm_res)
       FtmParams::StatusIndication status = m_ftm_params.GetStatusIndication();
       if (status == FtmParams::SUCCESSFUL)
         {
+          m_session_active = true;
+          Simulator::Cancel(m_session_active_check_event);
+//          std::cout << "inactive cancelled at t=" << Simulator::Now().GetSeconds() << std::endl;
+
           m_number_of_bursts_remaining = 1 << m_ftm_params.GetNumberOfBurstsExponent(); // 2 ^ Number of Bursts
           m_next_burst_period = MilliSeconds(m_ftm_params.GetBurstPeriod() * 100);
+
+          // session expire timer
+          // extend burst duration for expiration to have some tolerance
+          Time session_expire = MicroSeconds(m_ftm_params.DecodeBurstDuration() * 4);
 
           if(!m_ftm_params.GetAsap())
             {
               m_ftm_dialogs.clear();
               Time burst_begin = MilliSeconds (m_ftm_params.GetPartialTsfTimer());
               Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
+              session_expire += burst_begin;
             }
           else
             {
               m_number_of_bursts_remaining--;
               Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
             }
+          session_expire += m_number_of_bursts_remaining * m_next_burst_period;
+//          std::cout << "session expiration:" << session_expire.GetSeconds() << std::endl;
+          m_session_expire_event = Simulator::Schedule(session_expire, &FtmSession::SessionExpired, this);
         }
       else if (status == FtmParams::REQUEST_FAILED)
         {
@@ -366,6 +379,10 @@ FtmSession::SessionBegin (void)
       action.publicAction = WifiActionHeader::FTM_REQUEST;
       hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
       packet->AddHeader(hdr);
+
+      Time check_active = MilliSeconds(50);
+      m_session_active_check_event = Simulator::Schedule(check_active, &FtmSession::CheckSessionActive, this);
+//      std::cout << "inactive timeout start at t=" << Simulator::Now().GetSeconds() << std::endl;
     }
   else if (m_session_type == FTM_RESPONDER)
     {
@@ -377,6 +394,10 @@ FtmSession::SessionBegin (void)
 
       FtmResponseHeader ftm_res_hdr;
       ftm_res_hdr.SetDialogToken(m_current_dialog_token);
+
+      // session expire timer
+      // extend burst duration for expiration to have some tolerance
+      Time session_expire = MicroSeconds(m_ftm_params.DecodeBurstDuration() * 6);
 
       if (m_ftm_params.GetAsap())
         {
@@ -403,12 +424,10 @@ FtmSession::SessionBegin (void)
             {
               m_ftm_params.SetPartialTsfNoPref (false);
               m_ftm_params.SetPartialTsfTimer (500);
-              Simulator::Schedule(MilliSeconds (500), &FtmSession::StartNextBurst, this);
             }
-          else
-            {
-              Simulator::Schedule(MilliSeconds (m_ftm_params.GetPartialTsfTimer()), &FtmSession::StartNextBurst, this);
-            }
+          Time burst_begin = MilliSeconds (m_ftm_params.GetPartialTsfTimer());
+          Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
+          session_expire += burst_begin;
         }
       ftm_res_hdr.SetFtmParams(m_ftm_params);
       packet->AddHeader(ftm_res_hdr);
@@ -416,6 +435,10 @@ FtmSession::SessionBegin (void)
       action.publicAction = WifiActionHeader::FTM_RESPONSE;
       hdr.SetAction(WifiActionHeader::PUBLIC_ACTION, action);
       packet->AddHeader(hdr);
+
+      session_expire += m_number_of_bursts_remaining * m_next_burst_period;
+//      std::cout << "session expiration:" << session_expire.GetSeconds() << std::endl;
+      m_session_expire_event = Simulator::Schedule(session_expire, &FtmSession::SessionExpired, this);
     }
   else
     {
@@ -510,9 +533,11 @@ FtmSession::SendNextFtmPacket (void)
   else if(Simulator::Now() >= m_current_burst_end && m_number_of_bursts_remaining <= 0
           && m_ftms_per_burst_remaining > 0)
     {
-      if (!CheckTimestampSet ())
+      // wait some time for time stamp to update, if not after 10 tries, continue
+      if (!CheckTimestampSet () && m_timestamp_set_checks < 10)
         {
-          Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
+          Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
+          m_timestamp_set_checks++;
           return;
         }
       /*
@@ -781,16 +806,42 @@ FtmSession::TriggerReceived (void)
 }
 
 void
+FtmSession::CheckSessionActive (void)
+{
+  if (!m_session_active)
+    {
+//      std::cout << "inactive at t=" << Simulator::Now().GetSeconds() << std::endl;
+      EndSession();
+    }
+}
+
+void
+FtmSession::SessionExpired (void)
+{
+  if (m_session_active)
+    {
+      // m_session_type = 0 initiator, 1 = responder
+//      std::cout << "expired at t=" << Simulator::Now().GetSeconds() << " type=" << m_session_type << std::endl;
+      EndSession();
+    }
+}
+
+void
 FtmSession::EndSession (void)
 {
   m_session_active = false;
-  session_over_ftm_manager_callback (m_partner_addr);
 //  if (m_session_type == FTM_RESPONDER) std::cout << test_value << std::endl;
 //  if (m_session_over_callback_set && m_session_type == FTM_INITIATOR) //to fix break from session_override
   if (m_session_over_callback_set)
     {
       session_over_callback (*this);
     }
+  if (!Simulator::IsExpired(m_session_expire_event))
+    {
+      Simulator::Cancel(m_session_expire_event);
+    }
+
+  session_over_ftm_manager_callback (m_partner_addr);
 }
 
 void

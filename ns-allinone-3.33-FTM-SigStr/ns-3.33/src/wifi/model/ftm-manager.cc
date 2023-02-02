@@ -257,6 +257,7 @@ FtmManager::FindSession (Mac48Address addr)
 void
 FtmManager::SessionOver (Mac48Address addr)
 {
+//  std::cout << "erase: " << addr << " " << sessions.size()  << std::endl;
   sessions.erase (addr);
 }
 

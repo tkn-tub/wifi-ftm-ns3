@@ -283,9 +283,12 @@ private:
   uint8_t m_previous_dialog_token;  //!< The previous dialog token.
   uint32_t m_number_of_bursts_remaining; //!< The remaining bursts.
   uint8_t m_ftms_per_burst_remaining; //!< The remaining FTMs for the current burst.
+  uint8_t m_timestamp_set_checks; //!< The number of times we checked if the time stamp is set for the final packet if session overdrawn.
   Time m_current_burst_end; //!< The time when the current burst ends.
   Time m_next_burst_period; //!< The time when the next burst starts.
   Time m_next_ftm_packet; //!< The time when the next FTM packet is send.
+  EventId m_session_expire_event; //!< Session expire event id
+  EventId m_session_active_check_event; //!< Session active check event id
 
   /**
    * If the dialog tokens overflowed, if true the old dialog with the same token, gets deleted.
@@ -381,6 +384,17 @@ private:
    * Called when a trigger frame has been received.
    */
   void TriggerReceived (void);
+
+  /**
+   * Called 50 milliseconds after FTM request was send to mac layer.
+   * Checks if session is active, if not, session will end.
+   */
+  void CheckSessionActive (void);
+
+  /**
+   * Called when session expiration timer has ran out and ends the session if still active.
+   */
+  void SessionExpired (void);
 
   /**
    * Routine to end the session.

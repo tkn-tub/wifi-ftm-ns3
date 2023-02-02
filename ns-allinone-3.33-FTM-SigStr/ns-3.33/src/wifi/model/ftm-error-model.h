@@ -269,6 +269,13 @@ private:
   int ysize; //!< y axis size
 };
 
+/**
+ * \brief Error model based on wireless channel with signal strength dependency.
+ * \ingroup FTM
+ *
+ * This class models a wireless indoor channel where the signal strength and multi path influence the accuracy.
+ * It extends the WirelessFtmErrorModel.
+ */
 class WirelessSigStrFtmErrorModel : public WirelessFtmErrorModel
 {
 public:

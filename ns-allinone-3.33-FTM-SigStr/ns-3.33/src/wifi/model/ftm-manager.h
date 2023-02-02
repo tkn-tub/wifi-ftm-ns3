@@ -32,6 +32,9 @@
 
 
 namespace ns3 {
+/** \defgroup FTM
+ *  FTM group containing the FTM modules
+ */
 
 /**
  * \brief FTM manager class which takes care of all FTM sessions.
