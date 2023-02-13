@@ -283,12 +283,15 @@ private:
   uint8_t m_previous_dialog_token;  //!< The previous dialog token.
   uint32_t m_number_of_bursts_remaining; //!< The remaining bursts.
   uint8_t m_ftms_per_burst_remaining; //!< The remaining FTMs for the current burst.
-  uint8_t m_timestamp_set_checks; //!< The number of times we checked if the time stamp is set for the final packet if session overdrawn.
+  uint8_t m_timestamp_set_checks_next_frame; //!< The number of times we checked if the time stamp is set for the next packet.
+  uint8_t m_timestamp_set_checks_last_frame; //!< The number of times we checked if the time stamp is set for the final packet if session overdrawn.
   Time m_current_burst_end; //!< The time when the current burst ends.
   Time m_next_burst_period; //!< The time when the next burst starts.
   Time m_next_ftm_packet; //!< The time when the next FTM packet is send.
   EventId m_session_expire_event; //!< Session expire event id
   EventId m_session_active_check_event; //!< Session active check event id
+  EventId m_next_burst_event; //!< next burst event id
+  EventId m_next_packet_event; //!< next packet event id
 
   /**
    * If the dialog tokens overflowed, if true the old dialog with the same token, gets deleted.
@@ -412,6 +415,14 @@ private:
    * \param dialog the FtmDialog to calculate the RTT of
    */
   void CalculateRTT (Ptr<FtmDialog> dialog);
+
+  /**
+   * Checks if time stamps in dialog are 0. Used during RTT calculation. If at least one time stamp is 0, RTT is 0.
+   *
+   * \param dialog the FtmDialog to check
+   * \return true if at least one zero, false if all non zero
+   */
+  bool CheckTimeStampEqualZero (Ptr<FtmDialog> dialog);
 
   Callback<void, Mac48Address, FtmRequestHeader> session_override; //!< The session over ride callback to the manager.
 

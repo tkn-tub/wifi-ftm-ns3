@@ -61,7 +61,8 @@ FtmSession::FtmSession ()
   m_session_active = false;
   m_ftm_error_model = CreateObject<FtmErrorModel> ();
   m_live_rtt_enabled = false;
-  m_timestamp_set_checks = 0;
+  m_timestamp_set_checks_next_frame = 0;
+  m_timestamp_set_checks_last_frame = 0;
   CreateDefaultFtmParams ();
 
   send_packet = MakeNullCallback <void, Ptr<Packet>, WifiMacHeader> ();
@@ -185,13 +186,13 @@ FtmSession::ProcessFtmResponse (FtmResponseHeader ftm_res)
             {
               m_ftm_dialogs.clear();
               Time burst_begin = MilliSeconds (m_ftm_params.GetPartialTsfTimer());
-              Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
+              m_next_burst_event = Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
               session_expire += burst_begin;
             }
           else
             {
               m_number_of_bursts_remaining--;
-              Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
+              m_next_burst_event = Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
             }
           session_expire += m_number_of_bursts_remaining * m_next_burst_period;
 //          std::cout << "session expiration:" << session_expire.GetSeconds() << std::endl;
@@ -411,10 +412,10 @@ FtmSession::SessionBegin (void)
           m_number_of_bursts_remaining--;
           m_ftms_per_burst_remaining--;
 
-          Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
+          m_next_packet_event = Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
           if (m_number_of_bursts_remaining > 0)
             {
-              Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
+              m_next_burst_event = Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
             }
           m_ftm_params.SetPartialTsfNoPref (false);
         }
@@ -426,7 +427,7 @@ FtmSession::SessionBegin (void)
               m_ftm_params.SetPartialTsfTimer (500);
             }
           Time burst_begin = MilliSeconds (m_ftm_params.GetPartialTsfTimer());
-          Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
+          m_next_burst_event = Simulator::Schedule(burst_begin, &FtmSession::StartNextBurst, this);
           session_expire += burst_begin;
         }
       ftm_res_hdr.SetFtmParams(m_ftm_params);
@@ -454,11 +455,16 @@ FtmSession::SessionBegin (void)
 void
 FtmSession::SendNextFtmPacket (void)
 {
+  if (!m_session_active)
+    {
+      return;
+    }
   if(m_ftms_per_burst_remaining > 0 && Simulator::Now() < m_current_burst_end)
     {
-      if (!CheckTimestampSet ())
+      if (!CheckTimestampSet () && m_timestamp_set_checks_next_frame < 10)
         {
-          Simulator::Schedule(m_next_ftm_packet / 10, &FtmSession::SendNextFtmPacket, this);
+          m_next_packet_event = Simulator::Schedule(m_next_ftm_packet / 4, &FtmSession::SendNextFtmPacket, this);
+          m_timestamp_set_checks_next_frame++;
           return;
         }
       bool add_tsf_sync = false;
@@ -515,7 +521,7 @@ FtmSession::SendNextFtmPacket (void)
       mac_hdr.SetAddr1(m_partner_addr);
       send_packet(packet, mac_hdr);
 
-      Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
+      m_next_packet_event = Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
     }
   else if (m_ftms_per_burst_remaining <= 0 && m_number_of_bursts_remaining <= 0)
     {
@@ -534,10 +540,10 @@ FtmSession::SendNextFtmPacket (void)
           && m_ftms_per_burst_remaining > 0)
     {
       // wait some time for time stamp to update, if not after 10 tries, continue
-      if (!CheckTimestampSet () && m_timestamp_set_checks < 10)
+      if (!CheckTimestampSet () && m_timestamp_set_checks_last_frame < 10)
         {
-          Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
-          m_timestamp_set_checks++;
+          m_next_packet_event = Simulator::Schedule(m_next_ftm_packet, &FtmSession::SendNextFtmPacket, this);
+          m_timestamp_set_checks_last_frame++;
           return;
         }
       /*
@@ -571,7 +577,7 @@ FtmSession::SendNextFtmPacket (void)
 void
 FtmSession::StartNextBurst (void)
 {
-  if (m_number_of_bursts_remaining > 0)
+  if (m_number_of_bursts_remaining > 0 && m_session_active)
     {
       m_number_of_bursts_remaining--;
       m_ftms_per_burst_remaining = m_ftm_params.GetFtmsPerBurst();
@@ -583,7 +589,7 @@ FtmSession::StartNextBurst (void)
         }
       if (m_number_of_bursts_remaining > 0)
         {
-          Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
+          m_next_burst_event = Simulator::Schedule(m_next_burst_period, &FtmSession::StartNextBurst, this);
         }
     }
 }
@@ -742,6 +748,13 @@ void
 FtmSession::CalculateRTT (Ptr<FtmDialog> dialog)
 {
   int64_t rtt = 0;
+  //check if all timestamps set, if not, rtt is 0
+  if (CheckTimeStampEqualZero(dialog)) {
+      m_rtt_list.push_back (rtt);
+      m_sig_str_list.push_back (0);
+//      std::cout << "time stamp is zero" << std::endl;
+      return;
+  }
   int64_t diff_t4_t1;
   int64_t diff_t3_t2;
   if (dialog->t4 < dialog->t1) //time stamp overflow
@@ -776,6 +789,16 @@ FtmSession::CalculateRTT (Ptr<FtmDialog> dialog)
     {
       live_rtt (rtt);
     }
+}
+
+bool
+FtmSession::CheckTimeStampEqualZero (Ptr<FtmDialog> dialog)
+{
+  if (dialog->t1 == 0 || dialog->t2 == 0 || dialog->t3 == 0 || dialog->t4 == 0)
+    {
+      return true;
+    }
+  return false;
 }
 
 bool
@@ -839,6 +862,18 @@ FtmSession::EndSession (void)
   if (!Simulator::IsExpired(m_session_expire_event))
     {
       Simulator::Cancel(m_session_expire_event);
+    }
+  if (!Simulator::IsExpired(m_session_active_check_event))
+    {
+      Simulator::Cancel(m_session_active_check_event);
+    }
+  if (!Simulator::IsExpired(m_next_burst_event))
+    {
+      Simulator::Cancel(m_next_burst_event);
+    }
+  if (!Simulator::IsExpired(m_next_packet_event))
+    {
+      Simulator::Cancel(m_next_packet_event);
     }
 
   session_over_ftm_manager_callback (m_partner_addr);
